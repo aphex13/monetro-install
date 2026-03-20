@@ -1,0 +1,68 @@
+# Monetra — Self-Hosting (ohne Traefik)
+#
+# Voraussetzungen: Docker + Docker Compose
+# Installation:    curl -fsSL https://raw.githubusercontent.com/aphex13/monetra/main/install.sh | bash
+# Manuell:         cp .env.example .env && nano .env && docker compose -f docker-compose.selfhost.yml up -d
+#
+# App erreichbar unter: http://localhost  (oder eigene Domain via Reverse Proxy)
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-monetra}
+      POSTGRES_USER: ${POSTGRES_USER:-monetra}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-monetra} -d ${POSTGRES_DB:-monetra}"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  backend:
+    image: ghcr.io/aphex13/monetra-backend:latest
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-monetra}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-monetra}
+      NODE_ENV: production
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost}
+      # Optional: E-Mail (SMTP)
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-Monetra <noreply@example.com>}
+      # Optional: KI (Anthropic / Mistral / OpenAI)
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      AI_PROVIDER: ${AI_PROVIDER:-anthropic}
+      # Optional: Stripe Billing
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    image: ghcr.io/aphex13/monetra-frontend:latest
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  uploads_data:
