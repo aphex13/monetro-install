@@ -15,6 +15,12 @@ for arg in "$@"; do
   esac
 done
 
+# Wenn via "curl | bash" ausgeführt: stdin ist die Pipe → auf /dev/tty umleiten
+# damit interaktive Prompts (gum input, read) vom Terminal lesen können
+if [ ! -t 0 ] && [ -e /dev/tty ]; then
+  exec < /dev/tty
+fi
+
 # ── Farben & Helpers (Fallback ohne Gum) ──────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 plain_info()    { echo -e "${CYAN}  →${NC} $*"; }
