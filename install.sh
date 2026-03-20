@@ -56,19 +56,18 @@ fi
 
 # ── UI Helpers ────────────────────────────────────────────────────────────────
 header() {
-  if $HAS_GUM; then
-    echo ""
-    gum style \
-      --border double --border-foreground 6 \
-      --padding "1 4" --margin "1 2" \
-      --bold --foreground 6 \
-      "  Monetra — Self-Hosting Installer  "
-    echo ""
-  else
-    echo -e "\n${BOLD}${CYAN}  Monetra — Self-Hosting Installer${NC}"
-    echo "  ─────────────────────────────────────────"
-    echo ""
-  fi
+  echo ""
+  echo -e "${CYAN}${BOLD}"
+  echo "  ███╗   ███╗ ██████╗ ███╗   ██╗███████╗████████╗██████╗  █████╗ "
+  echo "  ████╗ ████║██╔═══██╗████╗  ██║██╔════╝╚══██╔══╝██╔══██╗██╔══██╗"
+  echo "  ██╔████╔██║██║   ██║██╔██╗ ██║█████╗     ██║   ██████╔╝███████║"
+  echo "  ██║╚██╔╝██║██║   ██║██║╚██╗██║██╔══╝     ██║   ██╔══██╗██╔══██║"
+  echo "  ██║ ╚═╝ ██║╚██████╔╝██║ ╚████║███████╗   ██║   ██║  ██║██║  ██║"
+  echo "  ╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝"
+  echo -e "${NC}"
+  echo -e "  ${BOLD}Self-Hosting Installer${NC}  ${CYAN}·${NC}  monetro.at"
+  echo -e "  ${CYAN}──────────────────────────────────────────────────────────────${NC}"
+  echo ""
 }
 
 info() {
