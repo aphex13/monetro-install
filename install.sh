@@ -158,10 +158,27 @@ DOCKER_VER=$(docker --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
 success "Docker ${DOCKER_VER} gefunden"
 
 # ── GHCR Login ───────────────────────────────────────────────────────────────
-if [ -n "$GHCR_TOKEN" ]; then
+# Wenn kein Token vom Server: GitHub-Username + PAT manuell abfragen
+if [ -z "$GHCR_TOKEN" ]; then
+  echo ""
+  plain_info "GitHub Container Registry Login erforderlich."
+  plain_info "Erstelle einen GitHub Classic Token mit 'read:packages' unter:"
+  plain_info "https://github.com/settings/tokens"
+  echo ""
+  if [ -e /dev/tty ]; then
+    printf "  GitHub Username: " > /dev/tty; read -r GHCR_USER < /dev/tty
+    printf "  GitHub Token (read:packages): " > /dev/tty; read -rs GHCR_TOKEN < /dev/tty; echo "" > /dev/tty
+  else
+    printf "  GitHub Username: "; read -r GHCR_USER
+    printf "  GitHub Token: "; read -rs GHCR_TOKEN; echo ""
+  fi
+  echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null 2>&1 \
+    && success "GHCR angemeldet" \
+    || error "GHCR-Login fehlgeschlagen. Bitte Token prüfen."
+else
   echo "$GHCR_TOKEN" | docker login ghcr.io -u monetra-bot --password-stdin >/dev/null 2>&1 \
     && success "GHCR angemeldet" \
-    || info "GHCR-Login fehlgeschlagen — versuche trotzdem fortzufahren"
+    || error "GHCR-Login fehlgeschlagen."
 fi
 
 # ── Installationsverzeichnis ──────────────────────────────────────────────────
