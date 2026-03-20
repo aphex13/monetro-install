@@ -138,7 +138,7 @@ fi
 [ -z "$LICENSE_KEY" ] && error "Kein Lizenzkey angegeben."
 
 info "Validiere Lizenzkey..."
-VALIDATE_RESP=$(curl -fsSL "${API_BASE}/validate?key=${LICENSE_KEY}" 2>/dev/null || echo '{}')
+VALIDATE_RESP=$(curl -sSL "${API_BASE}/validate?key=${LICENSE_KEY}" 2>/dev/null || echo '{}')
 VALID=$(echo "$VALIDATE_RESP" | grep -o '"valid":true' || true)
 
 if [ -z "$VALID" ]; then
