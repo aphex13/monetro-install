@@ -15,11 +15,10 @@ for arg in "$@"; do
   esac
 done
 
-# Wenn via "curl | bash" ausgeführt: stdin ist die Pipe → auf /dev/tty umleiten
-# damit interaktive Prompts (gum input, read) vom Terminal lesen können
-if [ ! -t 0 ] && [ -e /dev/tty ]; then
-  exec < /dev/tty
-fi
+# Bei "curl | bash" ist stdin die Pipe (kein TTY).
+# HAS_TTY steuert ob gum und interaktive Prompts möglich sind.
+HAS_TTY=false
+[ -t 0 ] && HAS_TTY=true
 
 # ── Farben & Helpers (Fallback ohne Gum) ──────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
@@ -27,7 +26,7 @@ plain_info()    { echo -e "${CYAN}  →${NC} $*"; }
 plain_success() { echo -e "${GREEN}  ✓${NC} $*"; }
 plain_error()   { echo -e "${RED}  ✗${NC} $*" >&2; exit 1; }
 
-# ── Gum installieren (wenn nicht vorhanden) ───────────────────────────────────
+# ── Gum installieren (nur wenn echtes TTY vorhanden) ──────────────────────────
 install_gum() {
   if command -v brew >/dev/null 2>&1; then
     brew install gum >/dev/null 2>&1
@@ -46,13 +45,14 @@ install_gum() {
   fi
 }
 
-if ! command -v gum >/dev/null 2>&1; then
-  plain_info "Installiere gum (Terminal-UI)..."
-  install_gum || true
-fi
-
 HAS_GUM=false
-command -v gum >/dev/null 2>&1 && HAS_GUM=true
+if $HAS_TTY; then
+  if ! command -v gum >/dev/null 2>&1; then
+    plain_info "Installiere gum (Terminal-UI)..."
+    install_gum || true
+  fi
+  command -v gum >/dev/null 2>&1 && HAS_GUM=true
+fi
 
 # ── UI Helpers ────────────────────────────────────────────────────────────────
 header() {
@@ -94,22 +94,26 @@ spin() {
 }
 
 prompt_input() {
-  local label="$1" placeholder="${2:-}"
+  local label="$1" placeholder="${2:-}" val
   if $HAS_GUM; then
     gum input --placeholder "$placeholder" --prompt "  ${label}: " \
       --prompt.foreground 6 --width 50
+  elif [ -e /dev/tty ]; then
+    printf "  %s: " "$label" > /dev/tty; read -r val < /dev/tty; echo "$val"
   else
-    printf "  %s: " "$label"; local val; read -r val; echo "$val"
+    printf "  %s: " "$label"; read -r val; echo "$val"
   fi
 }
 
 prompt_password() {
-  local label="$1"
+  local label="$1" val
   if $HAS_GUM; then
     gum input --password --placeholder "••••••••" --prompt "  ${label}: " \
       --prompt.foreground 6 --width 50
+  elif [ -e /dev/tty ]; then
+    printf "  %s: " "$label" > /dev/tty; read -rs val < /dev/tty; echo "" > /dev/tty; echo "$val"
   else
-    printf "  %s: " "$label"; local val; read -rs val; echo ""; echo "$val"
+    printf "  %s: " "$label"; read -rs val; echo ""; echo "$val"
   fi
 }
 
@@ -124,6 +128,8 @@ if [ -z "$LICENSE_KEY" ]; then
       --prompt "  Lizenzkey: " \
       --prompt.foreground 6 \
       --width 30)
+  elif [ -e /dev/tty ]; then
+    printf "  Lizenzkey: " > /dev/tty; read -r LICENSE_KEY < /dev/tty
   else
     printf "  Lizenzkey: "; read -r LICENSE_KEY
   fi
