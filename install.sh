@@ -4,7 +4,7 @@
 set -euo pipefail
 
 API_BASE="https://app.monetro.at/api/install"
-INSTALL_DIR="${MONETRA_DIR:-/opt/monetra}"
+INSTALL_DIR="${MONETRA_DIR:-/opt/monetro}"
 LICENSE_KEY=""
 
 # ── Argumente parsen ──────────────────────────────────────────────────────────
