@@ -212,6 +212,28 @@ else
   [ -z "${ADMIN_EMAIL:-}" ]    && ADMIN_EMAIL=$(prompt_input "Admin E-Mail" "admin@example.com")
   [ -z "${ADMIN_PASSWORD:-}" ] && ADMIN_PASSWORD=$(prompt_password "Admin Passwort")
 
+  # Server-URL/IP ermitteln
+  echo ""
+  SERVER_IP=$(curl -s --max-time 3 https://api.ipify.org 2>/dev/null || \
+              curl -s --max-time 3 https://ifconfig.me 2>/dev/null || \
+              hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
+  APP_URL_DEFAULT="http://${SERVER_IP}"
+
+  if $HAS_GUM; then
+    gum style --foreground 6 --bold "  Unter welcher URL ist der Server erreichbar?"
+    gum style --foreground 8 "  z.B. http://192.168.1.100  oder  https://mein-server.de"
+    echo ""
+    APP_URL=$(gum input --value "$APP_URL_DEFAULT" --prompt "  URL: " --prompt.foreground 6 --width 50)
+  elif [ -e /dev/tty ]; then
+    echo -e "  ${BOLD}Unter welcher URL ist der Server erreichbar?${NC}"
+    printf "  URL [%s]: " "$APP_URL_DEFAULT" > /dev/tty
+    read -r APP_URL < /dev/tty
+    [ -z "$APP_URL" ] && APP_URL="$APP_URL_DEFAULT"
+  else
+    APP_URL="$APP_URL_DEFAULT"
+  fi
+  APP_URL="${APP_URL%/}"  # trailing slash entfernen
+
   echo ""
   info "Erstelle .env mit zufälligen Sicherheitsschlüsseln..."
 
@@ -240,8 +262,8 @@ ADMIN_PASSWORD=${ADMIN_PASSWORD}
 INSTALL_LICENSE_KEY=${LICENSE_KEY}
 
 # ── App-URL ───────────────────────────────────────────────────────────────────
-FRONTEND_URL=http://localhost
-ALLOWED_ORIGINS=http://localhost
+FRONTEND_URL=${APP_URL}
+ALLOWED_ORIGINS=${APP_URL}
 HTTP_PORT=80
 
 # ── E-Mail / SMTP (optional) ──────────────────────────────────────────────────
@@ -263,13 +285,62 @@ EOF
   success ".env erstellt"
 fi
 
+# ── Port-Check ───────────────────────────────────────────────────────────────
+HTTP_PORT=$(grep "^HTTP_PORT=" .env 2>/dev/null | cut -d= -f2 || echo 80)
+if ss -tlnp 2>/dev/null | grep -q ":${HTTP_PORT} " || \
+   netstat -tlnp 2>/dev/null | grep -q ":${HTTP_PORT} "; then
+  echo ""
+  if $HAS_GUM; then
+    gum style --foreground 3 "  ⚠ Port ${HTTP_PORT} ist bereits belegt."
+    gum style --foreground 8 "  Wähle einen anderen Port (z.B. 8080):"
+    NEW_PORT=$(gum input --value "8080" --prompt "  Port: " --prompt.foreground 6 --width 10)
+  elif [ -e /dev/tty ]; then
+    echo -e "  ${BOLD}⚠ Port ${HTTP_PORT} ist bereits belegt.${NC}"
+    printf "  Anderen Port verwenden [8080]: " > /dev/tty
+    read -r NEW_PORT < /dev/tty
+    [ -z "$NEW_PORT" ] && NEW_PORT="8080"
+  else
+    NEW_PORT="8080"
+    plain_info "Port ${HTTP_PORT} belegt — verwende Port ${NEW_PORT}"
+  fi
+  # Port in .env und APP_URL anpassen
+  sed -i.bak "s/^HTTP_PORT=.*/HTTP_PORT=${NEW_PORT}/" .env && rm -f .env.bak
+  # FRONTEND_URL und ALLOWED_ORIGINS ebenfalls anpassen (falls :80 nicht im Standard-URL)
+  CURRENT_URL=$(grep "^FRONTEND_URL=" .env | cut -d= -f2)
+  if ! echo "$CURRENT_URL" | grep -qE ":[0-9]+$"; then
+    NEW_URL="${CURRENT_URL}:${NEW_PORT}"
+    sed -i.bak "s|^FRONTEND_URL=.*|FRONTEND_URL=${NEW_URL}|" .env && rm -f .env.bak
+    sed -i.bak "s|^ALLOWED_ORIGINS=.*|ALLOWED_ORIGINS=${NEW_URL}|" .env && rm -f .env.bak
+  fi
+  success "Port auf ${NEW_PORT} geändert"
+  HTTP_PORT="$NEW_PORT"
+fi
+
 # ── Images pullen & starten ───────────────────────────────────────────────────
 echo ""
 spin "Lade Docker-Images (kann einige Minuten dauern)..." \
   docker compose pull
 
-spin "Starte Monetra..." \
-  docker compose up -d
+info "Starte Monetra..."
+if ! docker compose up -d 2>/tmp/monetra_start_err; then
+  ERR=$(cat /tmp/monetra_start_err)
+  rm -f /tmp/monetra_start_err
+  if echo "$ERR" | grep -q "port is already allocated\|address already in use"; then
+    echo ""
+    echo -e "  ${RED}${BOLD}✗ Port-Konflikt:${NC} Port ${HTTP_PORT} ist bereits belegt."
+    echo ""
+    echo -e "  ${BOLD}Lösung:${NC} Passe den Port in ${INSTALL_DIR}/.env an:"
+    echo -e "    ${CYAN}HTTP_PORT=8080${NC}"
+    echo ""
+    echo -e "  Dann starte erneut:"
+    echo -e "    ${CYAN}docker compose -f ${INSTALL_DIR}/docker-compose.yml up -d${NC}"
+  else
+    echo -e "  ${RED}${BOLD}✗ Start fehlgeschlagen:${NC}"
+    echo "$ERR" | tail -5
+  fi
+  exit 1
+fi
+rm -f /tmp/monetra_start_err
 
 # ── Warten bis Backend bereit ist ────────────────────────────────────────────
 info "Warte auf Backend..."
@@ -283,6 +354,11 @@ done
 # ── Fertig ────────────────────────────────────────────────────────────────────
 PORT=$(grep "^HTTP_PORT=" .env 2>/dev/null | cut -d= -f2 || echo 80)
 ADMIN_MAIL=$(grep '^ADMIN_EMAIL=' .env | cut -d= -f2)
+FINAL_URL=$(grep '^FRONTEND_URL=' .env | cut -d= -f2)
+# Port an URL anhängen wenn nicht Standard (80/443) und noch nicht enthalten
+if [ "$PORT" != "80" ] && [ "$PORT" != "443" ] && ! echo "$FINAL_URL" | grep -qE ":[0-9]+$"; then
+  FINAL_URL="${FINAL_URL}:${PORT}"
+fi
 
 echo ""
 if $HAS_GUM; then
@@ -291,7 +367,7 @@ if $HAS_GUM; then
     --padding "1 4" --margin "0 2" \
     "$(gum style --foreground 2 --bold "  Monetra läuft!")" \
     "" \
-    "$(gum style --foreground 7 "  App:    http://localhost:${PORT}")" \
+    "$(gum style --foreground 7 "  App:    ${FINAL_URL}")" \
     "$(gum style --foreground 7 "  Login:  ${ADMIN_MAIL}")"
   echo ""
   gum style --foreground 8 --margin "0 4" \
@@ -299,17 +375,17 @@ if $HAS_GUM; then
     "  nano ${INSTALL_DIR}/.env   # SMTP, Domain, KI-Key konfigurieren" \
     "" \
     "Befehle:" \
-    "  docker compose -C ${INSTALL_DIR} logs -f" \
-    "  docker compose -C ${INSTALL_DIR} down" \
-    "  docker compose -C ${INSTALL_DIR} pull && docker compose -C ${INSTALL_DIR} up -d"
+    "  docker compose -f ${INSTALL_DIR}/docker-compose.yml logs -f" \
+    "  docker compose -f ${INSTALL_DIR}/docker-compose.yml down" \
+    "  docker compose -f ${INSTALL_DIR}/docker-compose.yml pull && docker compose -f ${INSTALL_DIR}/docker-compose.yml up -d"
 else
   echo -e "  ${GREEN}${BOLD}Monetra läuft!${NC}"
   echo "  ─────────────────────────────────────────"
-  echo -e "  App:    ${CYAN}http://localhost:${PORT}${NC}"
+  echo -e "  App:    ${CYAN}${FINAL_URL}${NC}"
   echo -e "  Login:  ${ADMIN_MAIL}"
   echo ""
-  echo "  Logs:   docker compose -C ${INSTALL_DIR} logs -f"
-  echo "  Stop:   docker compose -C ${INSTALL_DIR} down"
-  echo "  Update: docker compose -C ${INSTALL_DIR} pull && docker compose -C ${INSTALL_DIR} up -d"
+  echo "  Logs:   docker compose -f ${INSTALL_DIR}/docker-compose.yml logs -f"
+  echo "  Stop:   docker compose -f ${INSTALL_DIR}/docker-compose.yml down"
+  echo "  Update: docker compose -f ${INSTALL_DIR}/docker-compose.yml pull && docker compose -f ${INSTALL_DIR}/docker-compose.yml up -d"
 fi
 echo ""
